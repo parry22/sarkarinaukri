@@ -248,14 +248,16 @@ def fetch_eligible_users_for_notification(notification: Notification) -> list[Us
 def fetch_eligible_notifications_for_user(user: UserProfile) -> list[Notification]:
     """Fetch active notifications from the database and return those the user is eligible for.
 
-    Only considers notifications whose application_end_date is today or later.
+    Includes notifications where application_end_date is today or later, AND
+    notifications where application_end_date is NULL (deadline not yet parsed —
+    treat as still open so users don't miss them).
     """
     supabase = get_supabase()
     today = date.today().isoformat()
     response = (
         supabase.table("notifications")
         .select("*")
-        .gte("application_end_date", today)
+        .or_(f"application_end_date.is.null,application_end_date.gte.{today}")
         .execute()
     )
     all_notifications = _rows_to_notifications(response.data or [])
@@ -266,6 +268,7 @@ def fetch_eligible_notification_count(user: UserProfile) -> int:
     """Fetch active notifications from DB and count how many the user qualifies for.
 
     Convenience wrapper for the onboarding "You're eligible for X" message.
+    Includes notifications with NULL application_end_date (treat as still open).
     """
     notifications = fetch_eligible_notifications_for_user(user)
     return len(notifications)
