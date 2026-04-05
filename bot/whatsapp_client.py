@@ -102,12 +102,23 @@ async def _send_meta(phone: str, payload: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------
 
 async def send_text_message(phone: str, message: str) -> dict[str, Any]:
-    """Send a plain text WhatsApp message.
+    """Send a plain text message.
+
+    Auto-detects channel:
+    - phone starts with "tg_" → Telegram
+    - otherwise → WhatsApp (greenapi or meta)
 
     Args:
-        phone: Recipient phone in E.164 without '+' (e.g. "919876543210").
+        phone: "tg_{chat_id}" for Telegram, or E.164 without '+' for WhatsApp.
         message: The text body.
     """
+    # --- Telegram routing ---
+    if phone.startswith("tg_"):
+        from bot.telegram_client import send_text_message as tg_send
+        await tg_send(phone, message)
+        return {"channel": "telegram"}
+
+    # --- WhatsApp routing ---
     settings = get_settings()
 
     if settings.whatsapp_provider == "greenapi":

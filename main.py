@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from config import get_settings
 from bot.webhook import router as webhook_router
+from bot.telegram_webhook import router as telegram_router
 from bot.whatsapp_client import close_http_client
 from scraping.scheduler.cron_manager import setup_scheduler, shutdown_scheduler
 
@@ -25,6 +26,22 @@ async def lifespan(app: FastAPI):
     if settings.app_env != "testing":
         scheduler = setup_scheduler()
         logger.info("Scraping scheduler started")
+
+    # Auto-register Telegram webhook if token + base_url are configured
+    if settings.telegram_bot_token and settings.base_url not in ("http://localhost:8000", ""):
+        try:
+            from bot.telegram_client import set_webhook, get_me
+            bot_info = await get_me()
+            bot_name = bot_info.get("result", {}).get("username", "unknown")
+            logger.info("Telegram bot: @%s", bot_name)
+            tg_webhook_url = f"{settings.base_url.rstrip('/')}/telegram/webhook"
+            result = await set_webhook(tg_webhook_url)
+            if result.get("ok"):
+                logger.info("Telegram webhook registered: %s", tg_webhook_url)
+            else:
+                logger.warning("Telegram webhook registration failed: %s", result)
+        except Exception:
+            logger.exception("Could not register Telegram webhook on startup")
 
     yield
 
@@ -52,11 +69,28 @@ app = FastAPI(
 )
 
 app.include_router(webhook_router)
+app.include_router(telegram_router)
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "sarkari-naukri-bot"}
+
+
+@app.post("/telegram/setup")
+async def setup_telegram_webhook():
+    """Manually re-register the Telegram webhook. Call this after ngrok restarts."""
+    settings = get_settings()
+    if not settings.telegram_bot_token:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set in .env"}
+    if not settings.base_url or settings.base_url == "http://localhost:8000":
+        return {"ok": False, "error": "BASE_URL must be set to a public HTTPS URL (e.g. ngrok URL)"}
+    from bot.telegram_client import set_webhook, get_me
+    bot_info = await get_me()
+    bot_name = bot_info.get("result", {}).get("username", "unknown")
+    tg_webhook_url = f"{settings.base_url.rstrip('/')}/telegram/webhook"
+    result = await set_webhook(tg_webhook_url)
+    return {"bot": f"@{bot_name}", "webhook_url": tg_webhook_url, **result}
 
 
 if __name__ == "__main__":

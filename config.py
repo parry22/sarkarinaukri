@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"  # free, fast; upgrade to llama-3.3-70b for accuracy
 
+    # Telegram
+    telegram_bot_token: str = ""
+
     # App
     app_env: str = "development"
     app_port: int = 8000
