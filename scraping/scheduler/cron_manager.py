@@ -75,6 +75,58 @@ SCRAPER_SCHEDULE = [
 # Scraper runner
 # ---------------------------------------------------------------------------
 
+def _send_alerts_now(notification: Notification) -> None:
+    """
+    Immediately find eligible users and send them an alert — no queue, no delay.
+    Also records the send in alert_queue with status='sent' for audit trail.
+    """
+    import asyncio as _asyncio
+    from matching.eligibility_matcher import fetch_eligible_users_for_notification
+    from bot.whatsapp_client import send_text_message
+    from bot.message_templates import format_new_alert
+    from datetime import datetime, timezone
+
+    eligible_users = fetch_eligible_users_for_notification(notification)
+    if not eligible_users:
+        logger.debug("No eligible users for '%s'", notification.post_name)
+        return
+
+    client = get_supabase()
+    sent = 0
+
+    for user in eligible_users:
+        try:
+            message = format_new_alert(notification, user)
+            _asyncio.run(send_text_message(user.phone, message))
+
+            # Record in alert_queue for audit trail
+            try:
+                client.table("alert_queue").insert({
+                    "user_id": user.id,
+                    "notification_id": notification.id,
+                    "alert_type": "new_alert",
+                    "status": "sent",
+                    "scheduled_for": datetime.now(timezone.utc).isoformat(),
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+            except Exception:
+                pass  # Audit log failure is non-fatal
+
+            sent += 1
+            logger.info("Alert sent to %s for '%s'", user.phone, notification.post_name)
+
+        except Exception as exc:
+            logger.error(
+                "Failed to send alert to %s for '%s': %s",
+                user.phone, notification.post_name, exc
+            )
+
+    if sent:
+        logger.info(
+            "Sent %d real-time alerts for '%s'", sent, notification.post_name
+        )
+
+
 def _run_scraper_job(scraper_class: type) -> None:
     """
     Execute a single scraper job with full pipeline:
@@ -132,15 +184,15 @@ def _run_scraper_job(scraper_class: type) -> None:
 
                 if stored and stored.get("id"):
                     new_notifications += 1
-                    # Queue alerts for eligible users
+                    # Send alerts immediately to all eligible users
                     try:
                         notification = Notification(**stored)
-                        queue_alerts_for_notification(notification)
-                    except Exception as queue_exc:
+                        _send_alerts_now(notification)
+                    except Exception as alert_exc:
                         logger.error(
-                            "Failed to queue alerts for notification %s: %s",
+                            "Failed to send alerts for notification %s: %s",
                             stored.get("id"),
-                            queue_exc,
+                            alert_exc,
                         )
 
             except Exception as notif_exc:

@@ -149,10 +149,12 @@ class TestAlertFormat:
         assert "OBC: ₹100" in msg
 
     def test_alert_no_fee(self):
+        # New template omits the fee line entirely when there is no fee data
         notif = make_notification(application_fee=None)
         user = make_user()
         msg = tpl.format_new_alert(notif, user)
-        assert "N/A" in msg
+        assert "Fee" not in msg  # line is skipped, not shown as N/A
+        assert "🔗" in msg       # apply link always present
 
     def test_alert_no_documents(self):
         # Documents field removed from new rich format — apply link is shown instead

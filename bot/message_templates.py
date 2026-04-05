@@ -136,8 +136,6 @@ def profile_complete(eligible_count: int) -> str:
         f"🔍 Abhi aap *{eligible_count} active notifications* ke liye eligible hain.\n\n"
         "Ab se jab bhi koi nayi sarkari naukri aayegi jo aapke liye fit hogi, "
         "hum turant aapko alert bhejenge! 🔔\n\n"
-        "📌 *Free trial* mein aapko 7 din tak alerts milenge.\n"
-        "Uske baad subscribe karke unlimited alerts paayein.\n\n"
         "Commands:\n"
         "• *status* - apna profile dekhein\n"
         "• *alerts* - recent eligible notifications\n"
@@ -150,7 +148,7 @@ def profile_complete(eligible_count: int) -> str:
 # ------------------------------------------------------------------
 
 def format_new_alert(notification: Notification, user: UserProfile) -> str:
-    """Format a rich individual job alert with all details and apply link."""
+    """Format a rich individual job alert — only shows fields that are actually available."""
 
     # --- Category badge ---
     cat_emoji = {
@@ -160,69 +158,68 @@ def format_new_alert(notification: Notification, user: UserProfile) -> str:
         "Postal": "📬", "Judiciary": "⚖️",
     }.get(notification.exam_category, "📢")
 
-    # --- Vacancies ---
-    vacancies = f"{notification.total_vacancies:,}" if notification.total_vacancies else "N/A"
+    # --- Build detail lines — only include what is actually known ---
+    # --- Header (always shown) ---
+    header = [
+        f"{cat_emoji} *{notification.post_name}*",
+        f"🏢 {notification.recruiting_body}",
+    ]
 
-    # --- Age range ---
-    if notification.min_age and notification.max_age:
-        age_str = f"{notification.min_age}–{notification.max_age} years"
-    elif notification.max_age:
-        age_str = f"Up to {notification.max_age} years"
-    elif notification.min_age:
-        age_str = f"Min {notification.min_age} years"
-    else:
-        age_str = "N/A"
+    # --- Detail fields (only shown when available) ---
+    details = []
 
-    # --- Qualification ---
-    qual_str = notification.min_qualification or "N/A"
-    if notification.qualification_stream:
-        qual_str += f" ({notification.qualification_stream})"
+    if notification.total_vacancies:
+        details.append(f"📌 *Posts:* {notification.total_vacancies:,}")
 
-    # --- Application dates ---
-    start = (
-        notification.application_start_date.strftime("%d %b %Y")
-        if notification.application_start_date else "N/A"
-    )
-    end = (
-        notification.application_end_date.strftime("%d %b %Y")
-        if notification.application_end_date else "N/A"
-    )
+    if notification.min_qualification:
+        qual = notification.min_qualification
+        if notification.qualification_stream:
+            qual += f" ({notification.qualification_stream})"
+        details.append(f"🎓 *Qualification:* {qual}")
 
-    # --- Fee ---
-    fee_str = "N/A"
+    if notification.min_age or notification.max_age:
+        if notification.min_age and notification.max_age:
+            age_str = f"{notification.min_age}–{notification.max_age} years"
+        elif notification.max_age:
+            age_str = f"Up to {notification.max_age} years"
+        else:
+            age_str = f"Min {notification.min_age} years"
+        details.append(f"👤 *Age Limit:* {age_str}")
+
     if notification.application_fee:
         parts = []
         for key in ("General", "OBC", "SC", "ST", "EWS"):
             val = notification.application_fee.get(key)
             if val is not None:
                 parts.append(f"{key}: ₹{val}" if val else f"{key}: Free")
-        fee_str = " | ".join(parts) if parts else "N/A"
+        if parts:
+            details.append(f"💰 *Fee:* {' | '.join(parts)}")
 
-    # --- Apply link — prefer source_url (direct notification page), fallback to website ---
-    apply_link = notification.source_url or notification.official_website or "N/A"
-
-    # --- Exam/admit card dates ---
-    exam_line = ""
+    if notification.application_start_date:
+        details.append(f"📅 *Apply From:* {notification.application_start_date.strftime('%d %b %Y')}")
+    if notification.application_end_date:
+        details.append(f"⏳ *Last Date:* {notification.application_end_date.strftime('%d %b %Y')}")
     if notification.exam_date:
-        exam_line = f"\n🗓️ *Exam Date:* {notification.exam_date.strftime('%d %b %Y')}"
+        details.append(f"🗓️ *Exam Date:* {notification.exam_date.strftime('%d %b %Y')}")
     if notification.admit_card_date:
-        exam_line += f"\n🪪 *Admit Card:* {notification.admit_card_date.strftime('%d %b %Y')}"
+        details.append(f"🪪 *Admit Card:* {notification.admit_card_date.strftime('%d %b %Y')}")
 
-    return (
-        f"{cat_emoji} *{notification.post_name}*\n"
-        f"🏢 *By:* {notification.recruiting_body}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 *Posts:* {vacancies}\n"
-        f"🎓 *Qualification:* {qual_str}\n"
-        f"👤 *Age Limit:* {age_str}\n"
-        f"💰 *Fee:* {fee_str}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📅 *Apply Start:* {start}\n"
-        f"⏳ *Last Date:* {end}"
-        f"{exam_line}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"🔗 *Apply / Details:*\n{apply_link}"
-    )
+    # --- Apply link (always shown) ---
+    apply_link = notification.source_url or notification.official_website or ""
+    footer = [
+        f"🔗 *Apply / Full Details:*",
+        apply_link if apply_link else "Check official website",
+    ]
+
+    # --- Assemble with separator only when there are details ---
+    lines = header
+    if details:
+        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.extend(details)
+    lines.append("━━━━━━━━━━━━━━━━━━━")
+    lines.extend(footer)
+
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
