@@ -38,6 +38,7 @@ from scraping.parsers.eligibility_parser import parse_notification
 from scraping.parsers.pdf_parser import extract_text_from_pdf
 from alerts.alert_queue import queue_alerts_for_notification, process_pending_alerts, queue_deadline_reminders
 from alerts.reminder_scheduler import check_and_send_reminders
+from scraping.enricher import enrich_pending_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,15 @@ def _process_alert_queue_job() -> None:
         logger.exception("Alert queue processing failed: %s", exc)
 
 
+def _enrich_notifications_job() -> None:
+    """Enrich aggregator notifications with details fetched from their source pages."""
+    try:
+        count = enrich_pending_notifications(limit=30)
+        logger.info("Enrichment job: %d notifications enriched", count)
+    except Exception as exc:
+        logger.exception("Enrichment job failed: %s", exc)
+
+
 def _queue_deadline_reminders_job() -> None:
     """Queue deadline reminders and process due reminders. Isolated error handling."""
     try:
@@ -335,6 +345,15 @@ def setup_scheduler() -> BackgroundScheduler:
         trigger=IntervalTrigger(hours=6),
         id="queue_deadline_reminders",
         name="Queue deadline reminders",
+        replace_existing=True,
+    )
+
+    # Enrich aggregator notifications every 30 minutes
+    _scheduler.add_job(
+        _enrich_notifications_job,
+        trigger=IntervalTrigger(minutes=30),
+        id="enrich_notifications",
+        name="Enrich aggregator notifications",
         replace_existing=True,
     )
 
