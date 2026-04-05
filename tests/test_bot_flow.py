@@ -131,11 +131,11 @@ class TestAlertFormat:
         )
         msg = tpl.format_new_alert(notif, user)
         assert "SSC CGL 2026" in msg
-        assert "5000" in msg  # total_vacancies
+        assert "5,000" in msg  # total_vacancies (now formatted with comma)
         assert "Graduate" in msg
         assert "ssc.nic.in" in msg
-        assert "Aadhar" in msg
-        assert "Reminder" in msg or "reminder" in msg.lower()
+        # Documents no longer shown inline; source_url / apply link shown instead
+        assert "Apply" in msg or "apply" in msg.lower()
 
     def test_alert_fee_format(self):
         notif = make_notification(
@@ -143,8 +143,10 @@ class TestAlertFormat:
         )
         user = make_user()
         msg = tpl.format_new_alert(notif, user)
-        assert "General 100" in msg
-        assert "SC Free" in msg
+        assert "General: ₹100" in msg
+        # SC: None means free but template only shows keys with actual values
+        # OBC: ₹100 should appear, SC: None is skipped (no fee entry = free)
+        assert "OBC: ₹100" in msg
 
     def test_alert_no_fee(self):
         notif = make_notification(application_fee=None)
@@ -153,10 +155,11 @@ class TestAlertFormat:
         assert "N/A" in msg
 
     def test_alert_no_documents(self):
+        # Documents field removed from new rich format — apply link is shown instead
         notif = make_notification(documents_needed=None)
         user = make_user()
         msg = tpl.format_new_alert(notif, user)
-        assert "Standard documents" in msg
+        assert "Apply" in msg or "🔗" in msg
 
 
 # ===================================================================

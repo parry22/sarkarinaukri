@@ -150,56 +150,78 @@ def profile_complete(eligible_count: int) -> str:
 # ------------------------------------------------------------------
 
 def format_new_alert(notification: Notification, user: UserProfile) -> str:
-    """Format a new-notification alert with match indicators."""
+    """Format a rich individual job alert with all details and apply link."""
 
-    # --- Fee string ---
+    # --- Category badge ---
+    cat_emoji = {
+        "Railway": "🚂", "SSC": "📋", "Banking": "🏦", "Defence": "🪖",
+        "Teaching": "📚", "State_PSC": "🏛️", "UPSC": "🎯", "Police": "👮",
+        "PSU": "🏭", "Healthcare": "🏥", "Insurance": "📄",
+        "Postal": "📬", "Judiciary": "⚖️",
+    }.get(notification.exam_category, "📢")
+
+    # --- Vacancies ---
+    vacancies = f"{notification.total_vacancies:,}" if notification.total_vacancies else "N/A"
+
+    # --- Age range ---
+    if notification.min_age and notification.max_age:
+        age_str = f"{notification.min_age}–{notification.max_age} years"
+    elif notification.max_age:
+        age_str = f"Up to {notification.max_age} years"
+    elif notification.min_age:
+        age_str = f"Min {notification.min_age} years"
+    else:
+        age_str = "N/A"
+
+    # --- Qualification ---
+    qual_str = notification.min_qualification or "N/A"
+    if notification.qualification_stream:
+        qual_str += f" ({notification.qualification_stream})"
+
+    # --- Application dates ---
+    start = (
+        notification.application_start_date.strftime("%d %b %Y")
+        if notification.application_start_date else "N/A"
+    )
+    end = (
+        notification.application_end_date.strftime("%d %b %Y")
+        if notification.application_end_date else "N/A"
+    )
+
+    # --- Fee ---
     fee_str = "N/A"
     if notification.application_fee:
         parts = []
-        fee = notification.application_fee
         for key in ("General", "OBC", "SC", "ST", "EWS"):
-            if key in fee:
-                val = fee[key]
-                parts.append(f"{key} {val}" if val else f"{key} Free")
+            val = notification.application_fee.get(key)
+            if val is not None:
+                parts.append(f"{key}: ₹{val}" if val else f"{key}: Free")
         fee_str = " | ".join(parts) if parts else "N/A"
 
-    # --- Age string ---
-    age_parts = []
-    if notification.min_age is not None:
-        age_parts.append(str(notification.min_age))
-    if notification.max_age is not None:
-        age_parts.append(str(notification.max_age))
-    age_range = "-".join(age_parts) if age_parts else "N/A"
+    # --- Apply link — prefer source_url (direct notification page), fallback to website ---
+    apply_link = notification.source_url or notification.official_website or "N/A"
 
-    age_eligible = ""
-    if user.age_years and notification.max_age:
-        age_eligible = " ✅ ELIGIBLE" if user.age_years <= notification.max_age + 5 else ""
-
-    # --- Qualification match ---
-    qual_match = ""
-    if notification.min_qualification and user.qualification:
-        qual_match = " ✅ MATCH"
-
-    # --- Documents ---
-    docs = ", ".join(notification.documents_needed) if notification.documents_needed else "Standard documents"
-
-    # --- Dates ---
-    start = notification.application_start_date.strftime("%d %b %Y") if notification.application_start_date else "N/A"
-    end = notification.application_end_date.strftime("%d %b %Y") if notification.application_end_date else "N/A"
-
-    # --- Website ---
-    website = notification.official_website or "N/A"
+    # --- Exam/admit card dates ---
+    exam_line = ""
+    if notification.exam_date:
+        exam_line = f"\n🗓️ *Exam Date:* {notification.exam_date.strftime('%d %b %Y')}"
+    if notification.admit_card_date:
+        exam_line += f"\n🪪 *Admit Card:* {notification.admit_card_date.strftime('%d %b %Y')}"
 
     return (
-        f"📢 *NEW: {notification.post_name}*\n"
-        f"📋 Posts: ~{notification.total_vacancies or 'N/A'}\n"
-        f"🎓 Qualification: {notification.min_qualification or 'N/A'}{qual_match}\n"
-        f"📅 Apply: {start} - {end}\n"
-        f"💰 Fee: {fee_str}\n"
-        f"👤 Age: {age_range}{age_eligible}\n"
-        f"📝 Documents needed: {docs}\n"
-        f"🔗 Apply: {website}\n"
-        f"⏰ Reminder set: 3 days before deadline"
+        f"{cat_emoji} *{notification.post_name}*\n"
+        f"🏢 *By:* {notification.recruiting_body}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Posts:* {vacancies}\n"
+        f"🎓 *Qualification:* {qual_str}\n"
+        f"👤 *Age Limit:* {age_str}\n"
+        f"💰 *Fee:* {fee_str}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📅 *Apply Start:* {start}\n"
+        f"⏳ *Last Date:* {end}"
+        f"{exam_line}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 *Apply / Details:*\n{apply_link}"
     )
 
 

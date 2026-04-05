@@ -27,19 +27,40 @@ async def lifespan(app: FastAPI):
         scheduler = setup_scheduler()
         logger.info("Scraping scheduler started")
 
-    # Auto-register Telegram webhook if token + base_url are configured
-    if settings.telegram_bot_token and settings.base_url not in ("http://localhost:8000", ""):
+    # Auto-register Telegram webhook — detect ngrok URL automatically in dev
+    if settings.telegram_bot_token:
         try:
             from bot.telegram_client import set_webhook, get_me
-            bot_info = await get_me()
-            bot_name = bot_info.get("result", {}).get("username", "unknown")
-            logger.info("Telegram bot: @%s", bot_name)
-            tg_webhook_url = f"{settings.base_url.rstrip('/')}/telegram/webhook"
-            result = await set_webhook(tg_webhook_url)
-            if result.get("ok"):
-                logger.info("Telegram webhook registered: %s", tg_webhook_url)
+            import httpx as _httpx
+
+            public_url = settings.base_url
+
+            # In development, auto-detect current ngrok tunnel URL
+            if settings.app_env == "development":
+                try:
+                    async with _httpx.AsyncClient(timeout=3) as _hx:
+                        ngrok_resp = await _hx.get("http://localhost:4040/api/tunnels")
+                        tunnels = ngrok_resp.json().get("tunnels", [])
+                        for t in tunnels:
+                            if t.get("proto") == "https":
+                                public_url = t["public_url"]
+                                logger.info("ngrok tunnel detected: %s", public_url)
+                                break
+                except Exception:
+                    logger.debug("ngrok not running — using BASE_URL from .env")
+
+            if public_url and public_url not in ("http://localhost:8000", ""):
+                bot_info = await get_me()
+                bot_name = bot_info.get("result", {}).get("username", "unknown")
+                logger.info("Telegram bot: @%s", bot_name)
+                tg_webhook_url = f"{public_url.rstrip('/')}/telegram/webhook"
+                result = await set_webhook(tg_webhook_url)
+                if result.get("ok"):
+                    logger.info("Telegram webhook registered: %s", tg_webhook_url)
+                else:
+                    logger.warning("Telegram webhook registration failed: %s", result)
             else:
-                logger.warning("Telegram webhook registration failed: %s", result)
+                logger.info("No public URL available — Telegram webhook not registered (start ngrok)")
         except Exception:
             logger.exception("Could not register Telegram webhook on startup")
 
